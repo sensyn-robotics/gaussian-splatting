@@ -13,3 +13,6 @@ screenshots
 __pycache__/
 *.so
 *.o
+
+# data
+data/
