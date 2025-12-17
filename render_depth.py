@@ -9,6 +9,7 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import argparse
 from argparse import ArgumentParser
 import os
 import sys
@@ -85,19 +86,33 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
 
 if __name__ == "__main__":
     # Set up command line argument parser
-    parser = ArgumentParser(description="Testing script parameters")
+    parser = ArgumentParser(description="""Render depth maps from a trained Gaussian Splatting model.
+
+Required parameters:
+  --source_path, -s    Path to the dataset (COLMAP scene with cameras.bin/txt)
+  --model_path, -m     Path to the trained model directory (contains cfg_args and point_cloud/)
+
+Usage modes:
+  1. Standard mode (from trained model):
+     python render_depth.py -m <model_path> -s <source_path>
+
+  2. Explicit PLY mode (custom ply file):
+     python render_depth.py -s <source_path> --ply_file <path/to/point_cloud.ply> --output_path <output_dir>
+
+Examples:
+  python render_depth.py -m output/truck -s data/truck
+  python render_depth.py -s data/truck --ply_file custom.ply --output_path renders/
+""", formatter_class=argparse.RawDescriptionHelpFormatter)
     model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
-    parser.add_argument("--iteration", default=-1, type=int)
-    parser.add_argument("--skip_train", action="store_true")
-    parser.add_argument("--skip_test", action="store_true")
-    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--iteration", default=-1, type=int, help="Iteration to load (default: -1 for latest)")
+    parser.add_argument("--skip_train", action="store_true", help="Skip rendering train set")
+    parser.add_argument("--skip_test", action="store_true", help="Skip rendering test set")
+    parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
     # New explicit arguments
-    parser.add_argument("--ply_file", type=str, default=None, help="Explicit path to the point_cloud.ply file")
-    # parser.add_argument("--source_path", type=str, default=None, help="Explicit path to the dataset root") # Already defined by ModelParams
-    parser.add_argument("--output_path", type=str, default=None, help="Explicit output directory")
+    parser.add_argument("--ply_file", type=str, default=None, help="Explicit path to point_cloud.ply (use with --output_path)")
+    parser.add_argument("--output_path", type=str, default=None, help="Explicit output directory (use with --ply_file)")
     
-    # Custom argument parsing to handle missing cfg_args (common in some checkpoints)
     # Custom argument parsing to handle missing cfg_args (common in some checkpoints)
     args = parser.parse_args(sys.argv[1:])
     
