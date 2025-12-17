@@ -113,54 +113,53 @@ Examples:
     parser.add_argument("--ply_file", type=str, default=None, help="Explicit path to point_cloud.ply (use with --output_path)")
     parser.add_argument("--output_path", type=str, default=None, help="Explicit output directory (use with --ply_file)")
     
-    # Custom argument parsing to handle missing cfg_args (common in some checkpoints)
     args = parser.parse_args(sys.argv[1:])
-    
+
+    # Handle explicit PLY mode first - set model_path from output_path if not provided
+    if args.ply_file and args.output_path and not args.model_path:
+        args.model_path = args.output_path
+        os.makedirs(args.model_path, exist_ok=True)
+
     # Try to load cfg_args if available, but don't crash
-    cfgfilepath = os.path.join(args.model_path, "cfg_args")
-    if os.path.exists(cfgfilepath):
-        print("Looking for config file in", cfgfilepath)
-        with open(cfgfilepath) as cfg_file:
-            print("Config file found: {}".format(cfgfilepath))
-            cfgfile_string = cfg_file.read()
-            args_cfgfile = eval(cfgfile_string)
-            
-            # Merge logic from get_combined_args
-            merged_dict = vars(args_cfgfile).copy()
-            for k,v in vars(args).items():
-                if v != None:
-                    merged_dict[k] = v
-            args = argparse.Namespace(**merged_dict)
+    if args.model_path:
+        cfgfilepath = os.path.join(args.model_path, "cfg_args")
+        if os.path.exists(cfgfilepath):
+            print("Looking for config file in", cfgfilepath)
+            with open(cfgfilepath) as cfg_file:
+                print("Config file found: {}".format(cfgfilepath))
+                cfgfile_string = cfg_file.read()
+                args_cfgfile = eval(cfgfile_string)
+
+                # Merge logic from get_combined_args
+                merged_dict = vars(args_cfgfile).copy()
+                for k,v in vars(args).items():
+                    if v != None:
+                        merged_dict[k] = v
+                args = argparse.Namespace(**merged_dict)
+        else:
+            print(f"Config file not found at {cfgfilepath}, using command line arguments.")
     else:
-        print(f"Config file not found at {cfgfilepath}, using command line arguments.")
-        # Ensure source_path is absolute if provided
-        if hasattr(args, "source_path") and args.source_path:
-             args.source_path = os.path.abspath(args.source_path)
-        
-        # Manually set defaults for required params if they are None (due to sentinel=True)
-        if args.resolution is None:
-            args.resolution = -1
-        if args.sh_degree is None:
-            args.sh_degree = 3
-        if args.white_background is None:
-            args.white_background = False
-        if args.images is None:
-            args.images = "images"
+        print("No model_path provided, using command line arguments.")
 
-        if hasattr(args, "depths") and args.depths is None:
-            args.depths = ""
+    # Ensure source_path is absolute if provided
+    if hasattr(args, "source_path") and args.source_path:
+         args.source_path = os.path.abspath(args.source_path)
 
-        if args.data_device is None:
-            args.data_device = "cuda"
-        if args.eval is None:
-            args.eval = False
-
-    # Logic for explicit arguments
-    if args.ply_file and args.output_path:
-        # If using explicit PLY and output path, we can treat output_path as the model_path for caching purposes
-        if not args.model_path:
-            args.model_path = args.output_path
-            makedirs(args.model_path, exist_ok=True)
+    # Set defaults for required params if they are None (due to sentinel=True)
+    if args.resolution is None:
+        args.resolution = -1
+    if args.sh_degree is None:
+        args.sh_degree = 3
+    if args.white_background is None:
+        args.white_background = False
+    if args.images is None:
+        args.images = "images"
+    if hasattr(args, "depths") and args.depths is None:
+        args.depths = ""
+    if args.data_device is None:
+        args.data_device = "cuda"
+    if args.eval is None:
+        args.eval = False
 
     print("Rendering " + args.model_path)
 
