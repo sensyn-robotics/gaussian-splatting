@@ -48,7 +48,10 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     os.makedirs(depth_path, exist_ok=True)
     os.makedirs(depth_vis_path, exist_ok=True)
 
-    for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
+    # Sort views by image_name to ensure consistent ordering
+    sorted_views = sorted(views, key=lambda v: v.image_name)
+
+    for idx, view in enumerate(tqdm(sorted_views, desc="Rendering progress")):
         result = render(view, gaussians, pipeline, background, use_trained_exp=train_test_exp, separate_sh=separate_sh)
         rendering = result["render"]
         depth = result["depth"]
@@ -59,16 +62,19 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             depth = depth[..., depth.shape[-1] // 2:]
             gt = gt[..., gt.shape[-1] // 2:]
 
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        # Use original image name (without extension) for consistent correspondence
+        image_name = os.path.splitext(view.image_name)[0]
+
+        torchvision.utils.save_image(rendering, os.path.join(render_path, image_name + ".png"))
+        torchvision.utils.save_image(gt, os.path.join(gts_path, image_name + ".png"))
 
         # Save Raw Depth as .npy
-        np.save(os.path.join(depth_path, '{0:05d}'.format(idx) + ".npy"), depth.cpu().numpy())
+        np.save(os.path.join(depth_path, image_name + ".npy"), depth.cpu().numpy())
 
         # Save Visualization (Normalize for visibility, simple gray scale)
         depth_vis = depth.clone().detach()
         depth_vis = (depth_vis - depth_vis.min()) / (depth_vis.max() - depth_vis.min() + 1e-8)
-        torchvision.utils.save_image(depth_vis, os.path.join(depth_vis_path, '{0:05d}'.format(idx) + ".png"))
+        torchvision.utils.save_image(depth_vis, os.path.join(depth_vis_path, image_name + ".png"))
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, separate_sh: bool, ply_path: str = None, output_path: str = None):
     with torch.no_grad():
