@@ -9,19 +9,18 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-import torch
-from scene import Scene
-import os
-from tqdm import tqdm
-from os import makedirs
-from gaussian_renderer import render
-import torchvision
-from utils.general_utils import safe_state
 from argparse import ArgumentParser
-from arguments import ModelParams, PipelineParams, get_combined_args
-from gaussian_renderer import GaussianModel
+import os
+import sys
 import numpy as np
-import argparse
+import torch
+import torchvision
+from tqdm import tqdm
+
+from arguments import ModelParams, PipelineParams, get_combined_args
+from gaussian_renderer import GaussianModel, render
+from scene import Scene
+from utils.general_utils import safe_state
 
 try:
     from diff_gaussian_rasterization import SparseGaussianAdam
@@ -30,16 +29,23 @@ except:
     SPARSE_ADAM_AVAILABLE = False
 
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background, train_test_exp, separate_sh):
-    render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
-    gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
-    depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
-    depth_vis_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth_vis")
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background, train_test_exp, separate_sh, output_path=None):
+    if output_path:
+        # If explicit output path is given, everything goes there under train/test
+        base_path = os.path.join(output_path, name)
+    else:
+        # Legacy behavior
+        base_path = os.path.join(model_path, name, "ours_{}".format(iteration))
 
-    makedirs(render_path, exist_ok=True)
-    makedirs(gts_path, exist_ok=True)
-    makedirs(depth_path, exist_ok=True)
-    makedirs(depth_vis_path, exist_ok=True)
+    render_path = os.path.join(base_path, "renders")
+    gts_path = os.path.join(base_path, "gt")
+    depth_path = os.path.join(base_path, "depth")
+    depth_vis_path = os.path.join(base_path, "depth_vis")
+
+    os.makedirs(render_path, exist_ok=True)
+    os.makedirs(gts_path, exist_ok=True)
+    os.makedirs(depth_path, exist_ok=True)
+    os.makedirs(depth_vis_path, exist_ok=True)
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         result = render(view, gaussians, pipeline, background, use_trained_exp=train_test_exp, separate_sh=separate_sh)
@@ -63,19 +69,19 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         depth_vis = (depth_vis - depth_vis.min()) / (depth_vis.max() - depth_vis.min() + 1e-8)
         torchvision.utils.save_image(depth_vis, os.path.join(depth_vis_path, '{0:05d}'.format(idx) + ".png"))
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, separate_sh: bool):
+def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, separate_sh: bool, ply_path: str = None, output_path: str = None):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, ply_path=ply_path)
 
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh)
+             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh, output_path=output_path)
 
         if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh)
+             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh, output_path=output_path)
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -86,9 +92,13 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    # New explicit arguments
+    parser.add_argument("--ply_file", type=str, default=None, help="Explicit path to the point_cloud.ply file")
+    # parser.add_argument("--source_path", type=str, default=None, help="Explicit path to the dataset root") # Already defined by ModelParams
+    parser.add_argument("--output_path", type=str, default=None, help="Explicit output directory")
     
     # Custom argument parsing to handle missing cfg_args (common in some checkpoints)
-    import sys
+    # Custom argument parsing to handle missing cfg_args (common in some checkpoints)
     args = parser.parse_args(sys.argv[1:])
     
     # Try to load cfg_args if available, but don't crash
@@ -130,9 +140,17 @@ if __name__ == "__main__":
         if args.eval is None:
             args.eval = False
 
+    # Logic for explicit arguments
+    if args.ply_file and args.output_path:
+        # If using explicit PLY and output path, we can treat output_path as the model_path for caching purposes
+        if not args.model_path:
+            args.model_path = args.output_path
+            makedirs(args.model_path, exist_ok=True)
+
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, SPARSE_ADAM_AVAILABLE)
+    # Pass the explicit paths if they exist
+    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, SPARSE_ADAM_AVAILABLE, ply_path=args.ply_file, output_path=args.output_path)
