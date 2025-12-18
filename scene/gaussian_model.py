@@ -285,7 +285,14 @@ class GaussianModel:
 
         extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
         extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
-        assert len(extra_f_names)==3*(self.max_sh_degree + 1) ** 2 - 3
+        # Infer SH degree from PLY file instead of asserting
+        # Formula: num_extra = 3 * (sh_degree + 1)^2 - 3
+        # So: sh_degree = sqrt((num_extra + 3) / 3) - 1
+        num_extra = len(extra_f_names)
+        inferred_sh_degree = int(np.sqrt((num_extra + 3) / 3) - 1)
+        if inferred_sh_degree != self.max_sh_degree:
+            print(f"[Warning] SH degree mismatch: model initialized with {self.max_sh_degree}, but PLY has {inferred_sh_degree}. Using PLY's SH degree.")
+            self.max_sh_degree = inferred_sh_degree
         features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
         for idx, attr_name in enumerate(extra_f_names):
             features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
